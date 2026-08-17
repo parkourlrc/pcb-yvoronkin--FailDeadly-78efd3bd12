@@ -8,7 +8,7 @@ uint32_t GetRunTimeStatsCounter(void);
 
 extern uint32_t SystemCoreClock;
 
-#define configUSE_PREEMPTION                             1
+#define configUSE_PREEMPTION                            1
 #define configUSE_TIME_SLICING                          1
 #define configUSE_PORT_OPTIMISEX_TASK_SELECTION         1
 
@@ -16,7 +16,7 @@ extern uint32_t SystemCoreClock;
 #define configTICK_RATE_HZ                              ((TickType_t)1000)
 #define configMAX_PRIORITIES                            8
 #define configMINIMAL_STACK_SIZE                        ((uint16_t)128)
-#define configMAX_TASK_NAME_LEN                         16
+#define configMAX_TASK_NAME_LEN                         24
 #define configTOTAL_HEAP_SIZE                           ((size_t)(6u * 1024))
 
 #define configUSE_16_BIT_TICKS                          0
@@ -41,7 +41,7 @@ extern uint32_t SystemCoreClock;
 #define configCHECK_FOR_STACK_OVERFLOW                  0
 
 #define configSUPPORT_STATIC_ALLOCATION                 1
-#define configSUPPORT_DYNAMIC_ALLOCATION                1
+#define configSUPPORT_DYNAMIC_ALLOCATION                0
 
 #define configUSE_TRACE_FACILITY                        1
 #define configGENERATE_RUN_TIME_STATS                   1
@@ -57,10 +57,11 @@ extern uint32_t SystemCoreClock;
 #define configENABLE_MPU                                1
 #define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY     0
 #define configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS      0
+#define portUSING_MPU_WRAPPERS                          1
 #define configUSE_MPU_WRAPPERS_V1                       0
+#define configENABLE_ACCESS_CONTROL_LIST                1
 #define configPROTECTED_KERNEL_OBJECT_POOL_SIZE         32
 #define configSYSTEM_CALL_STACK_SIZE                    configMINIMAL_STACK_SIZE
-#define configENABEL_ACCESS_CONTROL_LIST                1
 
 
 /* STM32F4 implements four priority bits. */

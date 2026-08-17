@@ -9,9 +9,22 @@ extern "C" {
 
 #ifdef USE_FULL_ASSERT
 
+#ifndef assert_param
+
+#define assert_param(expr) \
+    ((expr) ? (void)0U : app_assert_failed((uint8_t *)__FILE__, __LINE__)) 
+
+#endif /* assert_param */
+
 void assert_storage_reset(void);
 void assert_failed(uint8_t *file, uint32_t line);
 void app_assert_failed(uint8_t *file, uint32_t line);
+
+#else
+
+#ifndef assert_param
+#define assert_param(expr) ((void)0U)
+#endif /* assert_param */
 
 #endif /* USE_FULL_ASSERT */
 

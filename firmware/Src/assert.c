@@ -1,11 +1,12 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "stm32_assert.h"
 #include "main.h"
 
 #include "macros.h"
 #include "fd_log.h"
+
+#include "stm32_assert.h" // should be last to prevent assert macro redefinition 
 
 #ifdef USE_FULL_ASSERT
 

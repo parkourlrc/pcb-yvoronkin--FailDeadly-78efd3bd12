@@ -14,7 +14,7 @@
       "+<event_groups.c>",
       "+<stream_buffer.c>",
       
-      "+<portable/MemMang/heap_4.c>",
+      "-<portable/MemMang/heap_4.c>",
 
       "+<portable/Common/mpu_wrappers_v2.c>",
 

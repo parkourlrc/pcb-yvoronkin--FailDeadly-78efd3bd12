@@ -8,13 +8,20 @@
 #include "test_task.h"
 #include "fd_crypto.h"
 #include "vcp_comm.h"
+#include "fd_crc.h"
 
 
 void FDTasksInit(void)
 {
     FDLogTaskInit();
+
+    FDCRCTaskInit();
+
     VCPTransmitTaskInit();
+    VCPReceiveTaskInit();
+
     BlinkTestTaskInit();
+
     FDCryptoTaskInit();
 
     FDLogFreeRTOSStateInit();

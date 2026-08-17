@@ -30,6 +30,15 @@ static
 struct uptime_data uptime_data
 __attribute__ ((aligned(UPTIME_DATA_ALIGN)));
 
+const
+MemoryRegion_t uptime_data_region =
+{
+    &uptime_data,
+    sizeof(uptime_data),
+    portMPU_REGION_READ_ONLY | 
+    portMPU_REGION_EXECUTE_NEVER
+};
+
 void uptime_data_reset(void)
 {
     memset(&uptime_data, 0, sizeof(struct uptime_data));
@@ -63,9 +72,9 @@ int32_t uptime_get(shared_uptime * uptime)
     res = xSemaphoreTake(uptime_data.uptime_get_mutex, 100);
     if (res == pdPASS)
     {
-        __disable_irq();
+        taskENTER_CRITICAL();
         memcpy(uptime, &uptime_data.uptime, sizeof(uptime_data.uptime));
-        __enable_irq();
+        taskEXIT_CRITICAL();
         xSemaphoreGive(uptime_data.uptime_get_mutex);
     }
     

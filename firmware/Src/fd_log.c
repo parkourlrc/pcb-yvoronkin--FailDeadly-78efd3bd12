@@ -24,23 +24,30 @@ enum log_state_flags
 
 struct log_data
 {
+    SemaphoreHandle_t logStreamBufferSendMutex;
+    SemaphoreHandle_t logStreamBufferIsEmptySemaphore;
+    SemaphoreHandle_t logTransmissionComplete;
+    StreamBufferHandle_t logStreamBuffer;
+
+    log_state_flags state : 8;
+};
+
+struct log_priv_data
+{
     StaticSemaphore_t StaticMutex;
     StaticSemaphore_t StaticSemaphore;
     StaticSemaphore_t StaticSemaphore2;
     StaticStreamBuffer_t StaticBuffer;
 
-    SemaphoreHandle_t logStreamBufferSendMutex;
-    SemaphoreHandle_t logStreamBufferIsEmptySemaphore;
-    SemaphoreHandle_t logTransmitionComplete;
-    StreamBufferHandle_t logStreamBuffer;
-
-    log_state_flags state : 8;
     uint8_t buffer[LOG_BUFFER_LEN + 1];
 };
 
+static
+struct log_priv_data log_priv_data = {0};
+
 static 
-__attribute__ ((aligned(2048)))
-struct log_data log_data = {0}; // Init with zero
+__attribute__ ((aligned(ROUND_UP_POW2(sizeof(struct log_data)))))
+struct log_data log_data = {0};
 
 #else
 
@@ -49,8 +56,8 @@ struct log_data
     log_state_flags state : 8;
 };
 
-static
-__attribute__ ((aligned(2)))
+static 
+__attribute__ ((aligned(ROUND_UP_POW2(sizeof(struct log_data)))))
 struct log_data log_data = {0};
 
 #endif
@@ -60,7 +67,6 @@ MemoryRegion_t log_data_region = {
     &log_data,
     sizeof(log_data),
     portMPU_REGION_READ_WRITE |
-    portMPU_REGION_PRIVILEGED_READ_WRITE |
     portMPU_REGION_EXECUTE_NEVER,
 };
 
@@ -72,38 +78,40 @@ void FDLogInit(void)
 {
     log_data.logStreamBuffer =
         xStreamBufferCreateStatic(LOG_BUFFER_LEN, 1,
-                                  log_data.buffer, &log_data.StaticBuffer);
-    if (log_data.logStreamBuffer == NULL)
-    {
-        Error_Handler();
-    }
+                                  log_priv_data.buffer, &log_priv_data.StaticBuffer);
+    assert_param(log_data.logStreamBuffer != NULL);
 
     log_data.logStreamBufferSendMutex =
-        xSemaphoreCreateMutexStatic(&log_data.StaticMutex);
-    if (log_data.logStreamBufferSendMutex == (SemaphoreHandle_t)NULL)
-    {
-        Error_Handler();
-    }
+        xSemaphoreCreateMutexStatic(&log_priv_data.StaticMutex);
+    assert_param(log_data.logStreamBufferSendMutex != (SemaphoreHandle_t)NULL);
 
     log_data.logStreamBufferIsEmptySemaphore = 
-        xSemaphoreCreateBinaryStatic(&log_data.StaticSemaphore);
-    if (log_data.logStreamBufferIsEmptySemaphore == (SemaphoreHandle_t)NULL)
-    {
-        Error_Handler();
-    }
+        xSemaphoreCreateBinaryStatic(&log_priv_data.StaticSemaphore);
+    assert_param(log_data.logStreamBufferIsEmptySemaphore != (SemaphoreHandle_t)NULL);
 
-    log_data.logTransmitionComplete = 
-        xSemaphoreCreateBinaryStatic(&log_data.StaticSemaphore2);
-    if (log_data.logStreamBufferIsEmptySemaphore == (SemaphoreHandle_t)NULL)
-    {
-        Error_Handler();
-    }
+    log_data.logTransmissionComplete = 
+        xSemaphoreCreateBinaryStatic(&log_priv_data.StaticSemaphore2);
+    assert_param(log_data.logStreamBufferIsEmptySemaphore != (SemaphoreHandle_t)NULL);
 
     // Allow FreeRTOS API from ISR
     NVIC_SetPriority(DMA2_Stream7_IRQn, 6);
     NVIC_SetPriority(USART1_IRQn, 6);
 
     FLAG_SET(log_data.state, RTOS_INITIALIZED);
+}
+
+void FDLogGrantAccess(TaskHandle_t xTask)
+{
+    assert_param(xTask != NULL);
+    assert_param(log_data.logStreamBuffer != NULL);
+    assert_param(log_data.logStreamBufferSendMutex != NULL);
+    assert_param(log_data.logStreamBufferIsEmptySemaphore != NULL);
+    assert_param(log_data.logTransmissionComplete != NULL);
+
+    vGrantAccessToStreamBuffer(xTask, log_data.logStreamBuffer);
+    vGrantAccessToSemaphore(xTask, log_data.logStreamBufferSendMutex);
+    vGrantAccessToSemaphore(xTask, log_data.logStreamBufferIsEmptySemaphore);
+    vGrantAccessToSemaphore(xTask, log_data.logTransmissionComplete);
 }
 
 static
@@ -114,8 +122,6 @@ void FDLogTask(void * arg)
     static uint8_t tempBuffer[LOG_BUFFER_LEN];
 
     (void)arg;
-    FLAG_CLR(log_data.state, RTOS_INITIALIZED);
-    FDLogInit();
 
     while (1)
     {
@@ -133,8 +139,8 @@ void FDLogTask(void * arg)
         // Transmit the data
         HAL_UART_Transmit_DMA(&huart1, tempBuffer, numBytes); 
 
-        // Wait for transmition copletion
-        xSemaphoreTake(log_data.logTransmitionComplete, portMAX_DELAY);
+        // Wait for transmission copletion
+        xSemaphoreTake(log_data.logTransmissionComplete, portMAX_DELAY);
     }
 }
 
@@ -144,6 +150,9 @@ void FDLogTask(void * arg)
 #if (FDLOG_TASK_STACK_ALIGN > 2048)
 #warn "FDLOG Stack take a lot of MPU region"
 #endif
+
+static 
+PRIVILEGED_DATA StaticTask_t xLogTaskBuffer;
 
 static
 portSTACK_TYPE xTaskStack[FDLOG_TASK_STACK_WORDS]
@@ -163,10 +172,13 @@ void FDLogTaskInit(void)
         xTaskStack,
         {
             { 0 },
-        }
+        },
+        &xLogTaskBuffer
     };
 
-    res = xTaskCreateRestricted(&task_params, NULL);
+    FLAG_CLR(log_data.state, RTOS_INITIALIZED);
+    FDLogInit();
+    res = xTaskCreateRestrictedStatic(&task_params, NULL);
     assert_param(res == pdPASS);
 }
 
@@ -181,7 +193,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
         if (FLAG_HAS(log_data.state, RTOS_INITIALIZED))
         {
-            xSemaphoreGiveFromISR(log_data.logTransmitionComplete, &xHigherPriorityTaskWoken); 
+            xSemaphoreGiveFromISR(log_data.logTransmissionComplete, &xHigherPriorityTaskWoken); 
             portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
         }
     }
@@ -274,8 +286,9 @@ static const
 char header[] = 
 "|   TASK NAME    |  TASK PRIORITY |  TIME ABS(ms)  |  TIME RELAT    |   STACK AVAIL  |\r\n\0";
 
-#define REPORTER_BUFFER_LEN 128
-#define NUM_TASKS_EXPECTED 10
+
+#define REPORTER_BUFFER_LEN 160
+#define NUM_TASKS_EXPECTED 14
 void FDLogFreeRTOSStateTask(void * arg)
 {
     UBaseType_t numTasks, i;
@@ -342,7 +355,7 @@ void FDLogFreeRTOSStateTask(void * arg)
         }
         FDSendLog((const uint8_t *)delimeter, strlen(delimeter), 0, 0);
           
-        vTaskDelay(pdMS_TO_TICKS(60000U)); // ~1min
+        vTaskDelay(LOG_RTOS_TASK_INTERVAL); // ~1min
     }
 }
 
@@ -354,12 +367,19 @@ void FDLogFreeRTOSStateTask(void * arg)
 #warn "FDLOG Stack take a lot of MPU region"
 #endif
 
+static 
+PRIVILEGED_DATA StaticTask_t xFDLogTaskBuffer;
+
 static
 portSTACK_TYPE RTOSStateReportStack[REPORTER_TASK_STACK_WORDS]
 __attribute__((aligned(REPORTER_TASK_STACK_ALIGN)));
 
+extern
+MemoryRegion_t uptime_data_region;
+
 void FDLogFreeRTOSStateInit(void)
 {
+    TaskHandle_t task;
     BaseType_t res;
 
     const
@@ -368,19 +388,23 @@ void FDLogFreeRTOSStateInit(void)
         "Tasks report",
         REPORTER_TASK_STACK_WORDS,
         NULL,
-        (tskIDLE_PRIORITY + 2U) | portPRIVILEGE_BIT, // since no user data processed
+        (tskIDLE_PRIORITY + 2U) | portPRIVILEGE_BIT, // no user data
         RTOSStateReportStack,
         {
             { 0 },
-        }
+        },
+        &xFDLogTaskBuffer,
     };
 
-    res = xTaskCreateRestricted(&task_params, NULL);
+    res = xTaskCreateRestrictedStatic(&task_params, &task);
     assert_param(res == pdPASS);
+
+    FDLogGrantAccess(task);
 }
 
 #else
 
+void FDLogGrantAccess(TaskHandle_t xTask) {}
 void FDSendLog(const char * buf, size_t len, int omit_rtos, int noblock) {}
 void FDLogTaskInit(void) {}
 void FDLogFreeRTOSStateInit(void) {}

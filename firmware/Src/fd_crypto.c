@@ -69,6 +69,9 @@ void FDCryptoTask(void * arg)
     }
 }
 
+static 
+PRIVILEGED_DATA StaticTask_t xCryptoTaskBuffer;
+
 extern
 MemoryRegion_t log_data_region;
 
@@ -89,8 +92,9 @@ void FDCryptoTaskInit(void)
             log_data_region,
 
         },
+        &xCryptoTaskBuffer
     };
 
-    res = xTaskCreateRestricted(&param, NULL);
+    res = xTaskCreateRestrictedStatic(&param, NULL);
     assert_param(res == pdPASS);
 }
